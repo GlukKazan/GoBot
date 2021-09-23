@@ -24,6 +24,34 @@ let uid     = null;
 let setup   = null;
 let turn    = null;
 
+var winston = require('winston');
+require('winston-daily-rotate-file');
+
+const logFormat = winston.format.combine(
+    winston.format.timestamp({
+        format: 'HH:mm:ss'
+    }),
+    winston.format.printf(
+        info => `${info.level}: ${info.timestamp} - ${info.message}`
+    )
+);
+
+var transport = new winston.transports.DailyRotateFile({
+    dirname: '',
+    filename: 'gobot-%DATE%.log',
+    datePattern: 'YYYY-MM-DD',
+    zippedArchive: true,
+    maxSize: '20m',
+    maxFiles: '14d'
+});
+
+var logger = winston.createLogger({
+    format: logFormat,
+    transports: [
+      transport
+    ]
+});
+
 function App() {
     this.state  = STATE.INIT;
     this.states = [];
@@ -33,6 +61,7 @@ let app = new App();
 
 let init = function(app) {
     console.log('INIT');
+    logger.info('INIT');
     app.state = STATE.WAIT;
     axios.post(SERVICE + '/api/auth/login', {
         username: USERNAME,
@@ -44,6 +73,7 @@ let init = function(app) {
     })
     .catch(function (error) {
       console.log('INIT ERROR: ' + error);
+      logger.error('INIT ERROR: ' + error);
       app.state  = STATE.STOP;
     });
     return true;
@@ -65,6 +95,7 @@ let recovery = function(app) {
       })
       .catch(function (error) {
         console.log('RECO ERROR: ' + error);
+        logger.error('RECO ERROR: ' + error);
         app.state  = STATE.INIT;
       });
       return true;
@@ -82,6 +113,7 @@ let getConfirmed = function(app) {
     })
     .catch(function (error) {
         console.log('GETM ERROR: ' + error);
+        logger.error('GETM ERROR: ' + error);
         app.state  = STATE.INIT;
     });
     return true;
@@ -105,6 +137,7 @@ let checkTurn = function(app) {
     })
     .catch(function (error) {
         console.log('TURN ERROR: ' + error);
+        logger.error('TURN ERROR: ' + error);
         app.state  = STATE.INIT;
     });
     return true;
@@ -120,16 +153,17 @@ function getSetup(fen) {
     return r;
 }
 
-function FinishTurnCallback(bestMove, fen, value) {
+function FinishTurnCallback(bestMove, fen, value, time) {
     let move = ai.FormatMove(bestMove);
-    console.log('move = ' + move + ', value=' + value);
+    console.log('move = ' + move + ', value=' + value + ', time = ' + time);
+    logger.info('move = ' + move + ', value=' + value + ', time = ' + time);
     app.state  = STATE.WAIT;
     axios.post(SERVICE + '/api/move', {
         uid: uid,
         next_player: (turn == 0) ? 2 : 1,
         move_str: move,
         setup_str: getSetup(fen),
-        note: 'value=' + value
+        note: 'value=' + value + ', time = ' + time
     }, {
         headers: { Authorization: `Bearer ${TOKEN}` }
     })
@@ -138,6 +172,7 @@ function FinishTurnCallback(bestMove, fen, value) {
     })
     .catch(function (error) {
         console.log('MOVE ERROR: ' + error);
+        logger.error('MOVE ERROR: ' + error);
         app.state  = STATE.INIT;
     });
     app.state  = STATE.STOP;
@@ -150,6 +185,7 @@ let sendMove = function(app) {
     if (result) {
         let fen = result[1];
         console.log('[' + sid + '] fen = ' + fen);
+        logger.info('[' + sid + '] fen = ' + fen);
         ai.FindMove(fen, FinishTurnCallback);
     } else {
         app.state  = STATE.STOP;
