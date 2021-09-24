@@ -297,6 +297,7 @@ async function predict(fen, redo, undo, result) {
 async function FindMove(fen, callback, logger) {
     const t0 = Date.now();
     if (model === null) {
+        await tf.enableProdMode();
         await tf.setBackend('wasm');
         model = await tf.loadLayersModel(URL);
         console.log(tf.getBackend());
