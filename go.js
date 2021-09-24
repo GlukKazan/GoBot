@@ -1,6 +1,8 @@
 "use strict";
 
-const tf = require('@tensorflow/tfjs');
+const tf = require('@tensorflow/tfjs'); 
+const wasm = require('@tensorflow/tfjs-backend-wasm');
+
 const _ = require('underscore');
 
 const URL = 'https://games.dtco.ru/model/model.json';
@@ -295,6 +297,7 @@ async function predict(fen, redo, undo, result) {
 async function FindMove(fen, callback, logger) {
     const t0 = Date.now();
     if (model === null) {
+        await tf.setBackend('wasm');
         model = await tf.loadLayersModel(URL);
         console.log(tf.getBackend());
     }
