@@ -175,7 +175,11 @@ function FinishTurnCallback(bestMove, fen, value, time) {
         logger.error('MOVE ERROR: ' + error);
         app.state  = STATE.INIT;
     });
-    app.state  = STATE.STOP;
+//  app.state  = STATE.STOP;
+}
+
+let LoggerInfo = function(s) {
+    logger.info(s);
 }
 
 let sendMove = function(app) {
@@ -186,7 +190,7 @@ let sendMove = function(app) {
         let fen = result[1];
         console.log('[' + sid + '] fen = ' + fen);
         logger.info('[' + sid + '] fen = ' + fen);
-        ai.FindMove(fen, FinishTurnCallback);
+        ai.FindMove(fen, FinishTurnCallback, LoggerInfo);
     } else {
         app.state  = STATE.STOP;
     }

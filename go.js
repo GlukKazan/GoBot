@@ -154,7 +154,69 @@ function checkForbidden(board, forbidden) {
     }
 }
 
-function InitializeFromFen(fen, forbidden) {
+function flipX(pos) {
+    const x = pos % SIZE;
+    pos -= x;
+    return pos + (SIZE - x - 1);
+}
+
+function flipY(pos) {
+    const y = (pos / SIZE) | 0;
+    pos -= y * SIZE;
+    return (SIZE - y - 1) * SIZE + pos;
+}
+
+function toRight(pos) {
+    const x = pos % SIZE;
+    const y = (pos / SIZE) | 0;
+    return x * SIZE + (SIZE - y - 1);
+}
+
+function toLeft(pos) {
+    const x = pos % SIZE;
+    const y = (pos / SIZE) | 0;
+    return (SIZE - x - 1) * SIZE + y;
+}
+
+function transform(pos, n) {    
+    switch (n) {
+        case 1:
+            pos = flipX(pos);
+            break;
+        case 2:
+            pos = flipY(pos);
+            break;
+        case 3:
+            pos = flipX(pos);
+            pos = flipY(pos);
+            break;
+        case 4:
+            pos = toRight(pos);
+            break;
+        case 5:
+            pos = toLeft(pos);
+            break;
+        case 6:
+            pos = toRight(pos);
+            pos = flipX(pos);
+            break;
+        case 7:
+            pos = toLeft(pos);
+            pos = flipX(pos);
+            break;
+        case 8:
+            pos = flipX(pos);
+            pos = toLeft(pos);
+            break;
+        case 9:
+            pos = flipX(pos);
+            pos = toRight(pos);
+            break;
+    }
+    return pos;
+}
+
+function InitializeFromFen(fen, forbidden, redo) {
     let board = new Float32Array(SIZE * SIZE);
 
     let row = 0;
@@ -186,8 +248,9 @@ function InitializeFromFen(fen, forbidden) {
                piece = 0;
                break;
         }
-        board[row * SIZE + col] = piece;
-        forbidden.push(row * SIZE + col);
+        const pos = transform(row * SIZE + col, redo);
+        board[pos] = piece;
+        forbidden.push(pos);
         col++;
     }
 
@@ -205,44 +268,51 @@ function FormatMove(move) {
     return letters[col] + (SIZE - row);
 }
 
-async function FindMove(fen, callback) {
+async function predict(fen, redo, undo, result) {
+    let forbidden = [];
+    const d = InitializeFromFen(fen, forbidden, redo);
+
+    const p = await model.predict(d);
+    const r = await p.data();
+
+    d.dispose();
+    p.dispose();
+
+    if (forbidden.length < 10) {
+        forbidden.push(180);
+    }
+
+    for (let i = 0; i < r.length; i++) {
+        if (_.indexOf(forbidden, i) >= 0) continue;
+        const p = r[i] * r[i] * r[i];
+        result.push({
+            pos: transform(i, undo),
+            weight: p
+        });
+   }
+}
+
+async function FindMove(fen, callback, logger) {
     const t0 = Date.now();
     if (model === null) {
         model = await tf.loadLayersModel(URL);
         console.log(tf.getBackend());
     }
-    let forbidden = [];
-    const data = InitializeFromFen(fen, forbidden);
+
     const t1 = Date.now();
     console.log('Load time: ' + (t1 - t0));
-
-    const prediction = await model.predict(data);
-    const result = await prediction.data();
+    let r = []; 
+    await predict(fen, 0, 0, r);
+    await predict(fen, 1, 1, r);
+    await predict(fen, 2, 2, r);
+    await predict(fen, 3, 3, r);
+    await predict(fen, 4, 5, r);
+    await predict(fen, 5, 4, r);
+    await predict(fen, 6, 8, r);
+    await predict(fen, 7, 9, r);
     const t2 = Date.now();
     console.log('Predict time: ' + (t2 - t1));
 
-    data.dispose();
-    prediction.dispose();
-    if (forbidden.length < 10) {
-        forbidden.push(180);
-    }
-//  console.log(forbidden);
-
-    let r = []; const eps = 1e-6; let s = 0;
-    for (let i = 0; i < result.length; i++) {
-         if (_.indexOf(forbidden, i) >= 0) continue;
-         let p = result[i] * result[i] * result[i];
-/*       if (p < eps) p = eps;
-         if (p > 1 - eps) p = 1 - eps;*/
-         s += p;
-         r.push({
-             pos: i,
-             weight: p
-         });
-    }
-/*  _.each(r, function(x) {
-        x.weight = x.weight / s;
-    });*/
     r = _.sortBy(r, function(x) {
         return -x.weight;
     });
@@ -250,11 +320,12 @@ async function FindMove(fen, callback) {
     let sz = r.length; let ix = 0;
     if (sz < 1) return; sz = 1;
     while (sz < Math.min(r.length - 1, 5)) {
-        if (r[sz].weight * 10 < r[sz - 1].weight) break;
+        if (r[sz].weight * 2 < r[sz - 1].weight) break;
         sz++;
     }
     for (let i = 0; i < sz; i++) {
         console.log(FormatMove(r[i].pos) + ': ' + r[i].weight);
+        logger(FormatMove(r[i].pos) + ': ' + r[i].weight);
     }
     if (sz > 1) {
         if (sz > 5) sz = 5;
