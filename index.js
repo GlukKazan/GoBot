@@ -11,7 +11,8 @@ const STATE = {
     WAIT: 4,
     STOP: 5,
     RECO: 6,
-    GETM: 7
+    GETM: 7,
+    RQST: 8
 };
 
 const SERVICE  = 'http://127.0.0.1:3000';
@@ -119,6 +120,58 @@ let getConfirmed = function(app) {
     return true;
 }
 
+function AdvisorCallback(moves, time) {
+    _.each(moves, function(m) {
+        console.log('move = ' + m.move + ', value=' + m.weight + ', time = ' + time);
+        logger.info('move = ' + m.move + ', value=' + m.weight + ', time = ' + time);
+    });
+    app.state  = STATE.WAIT;
+    axios.post(SERVICE + '/api/ai', moves , {
+        headers: { Authorization: `Bearer ${TOKEN}` }
+    })
+    .then(function (response) {
+        app.state  = STATE.RQST;
+    })
+    .catch(function (error) {
+        console.log('RQST ERROR: ' + error);
+        logger.error('RQST ERROR: ' + error);
+        app.state  = STATE.INIT;
+    });
+
+}
+
+let request = function(app) {
+    //  console.log('RQST');
+    app.state = STATE.WAIT;
+    axios.get(SERVICE + '/api/ai/2', {
+        headers: { Authorization: `Bearer ${TOKEN}` }
+    })
+    .then(function (response) {
+        if (response.data.length > 0) {
+            const sid = response.data[0].sid;
+            const setup = response.data[0].setup;
+            const coeff = response.data[0].coeff;
+            const result = setup.match(/[?&]setup=(.*)/);
+            if (result) {
+                let fen = result[1];
+                console.log('[' + sid + '] fen = ' + fen);
+                logger.info('[' + sid + '] fen = ' + fen);
+                ai.Advisor(sid, fen, coeff, AdvisorCallback);
+            } else {
+                app.state = STATE.TURN;
+            }
+        } else {
+            app.state = STATE.TURN;
+        }
+    })
+    .catch(function (error) {
+        console.log('RQST ERROR: ' + error);
+        logger.error('RQST ERROR: ' + error);
+        app.state  = STATE.INIT;
+    });
+    return true;
+}
+
 let checkTurn = function(app) {
     //  console.log('TURN');
     app.state = STATE.WAIT;
@@ -132,7 +185,7 @@ let checkTurn = function(app) {
             setup = response.data[0].last_setup;
             app.state = STATE.RECO;
         } else {
-            app.state = STATE.TURN;
+            app.state = STATE.RQST;
         }
     })
     .catch(function (error) {
@@ -175,7 +228,6 @@ function FinishTurnCallback(bestMove, fen, value, time) {
         logger.error('MOVE ERROR: ' + error);
         app.state  = STATE.INIT;
     });
-//  app.state  = STATE.STOP;
 }
 
 let LoggerInfo = function(s) {
@@ -219,6 +271,7 @@ app.states[STATE.TURN] = checkTurn;
 app.states[STATE.MOVE] = sendMove;
 app.states[STATE.RECO] = recovery;
 app.states[STATE.GETM] = getConfirmed;
+app.states[STATE.RQST] = request;
 
 let run = function() {
     if (app.exec()) {
