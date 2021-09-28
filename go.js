@@ -5,7 +5,7 @@ const wasm = require('@tensorflow/tfjs-backend-wasm');
 
 const _ = require('underscore');
 
-const URL = 'https://games.dtco.ru/model/model.json';
+const URL = 'http://127.0.0.1:3000/model/model.json';
 const SIZE = 19;
 
 let model = null;
@@ -343,6 +343,8 @@ async function FindMove(fen, callback, logger) {
 async function Advisor(sid, fen, coeff, flags, callback) {
     const t0 = Date.now();
     if (model === null) {
+        await tf.enableProdMode();
+        await tf.setBackend('wasm');
         model = await tf.loadLayersModel(URL);
         console.log(tf.getBackend());
     }
