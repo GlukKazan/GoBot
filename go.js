@@ -340,7 +340,7 @@ async function FindMove(fen, callback, logger) {
     callback(r[ix].pos, fen, r[ix].weight * 1000, t2 - t0);
 }
 
-async function Advisor(sid, fen, coeff, callback) {
+async function Advisor(sid, fen, coeff, flags, callback) {
     const t0 = Date.now();
     if (model === null) {
         model = await tf.loadLayersModel(URL);
@@ -351,14 +351,14 @@ async function Advisor(sid, fen, coeff, callback) {
     console.log('Load time: ' + (t1 - t0));
 
     let r = []; 
-    await predict(fen, 0, 0, r);
-    await predict(fen, 1, 1, r);
-    await predict(fen, 2, 2, r);
-    await predict(fen, 3, 3, r);
-    await predict(fen, 4, 5, r);
-    await predict(fen, 5, 4, r);
-    await predict(fen, 6, 8, r);
-    await predict(fen, 7, 9, r);
+    if (flags & 0x01) await predict(fen, 0, 0, r);
+    if (flags & 0x02) await predict(fen, 1, 1, r);
+    if (flags & 0x04) await predict(fen, 2, 2, r);
+    if (flags & 0x08) await predict(fen, 3, 3, r);
+    if (flags & 0x10) await predict(fen, 4, 5, r);
+    if (flags & 0x20) await predict(fen, 5, 4, r);
+    if (flags & 0x40) await predict(fen, 6, 8, r);
+    if (flags & 0x80) await predict(fen, 7, 9, r);
     const t2 = Date.now();
     console.log('Predict time: ' + (t2 - t1));
 
@@ -370,6 +370,7 @@ async function Advisor(sid, fen, coeff, callback) {
     let sz = 0;
     while (sz < r.length - 1) {
         if ((sz > 0) && (r[sz].weight * coeff < r[sz - 1].weight)) break;
+        if (sz > 10) break;
         result.push({
             sid: sid,
             move: FormatMove(r[sz].pos),

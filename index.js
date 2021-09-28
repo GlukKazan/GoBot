@@ -150,13 +150,16 @@ let request = function(app) {
         if (response.data.length > 0) {
             const sid = response.data[0].sid;
             const setup = response.data[0].setup;
-            const coeff = response.data[0].coeff;
+            let coeff = response.data[0].coeff;
+            if (!coeff) coeff = 5;
+            let flags = response.data[0].flags;
+            if (!flags) flags = 0xFF;
             const result = setup.match(/[?&]setup=(.*)/);
             if (result) {
                 let fen = result[1];
-                console.log('[' + sid + '] fen = ' + fen);
+                console.log('[' + sid + '] fen = ' + fen + ', flags = ' + flags + ', coeff = ' + coeff);
                 logger.info('[' + sid + '] fen = ' + fen);
-                ai.Advisor(sid, fen, coeff, AdvisorCallback);
+                ai.Advisor(sid, fen, coeff, flags, AdvisorCallback);
             } else {
                 app.state = STATE.TURN;
             }
