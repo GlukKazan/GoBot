@@ -7,6 +7,7 @@ const _ = require('underscore');
 
 const URL = 'http://127.0.0.1:3000/model/model.json';
 const SIZE = 19;
+const BATCH = 1;
 
 let model = null;
 
@@ -218,8 +219,8 @@ function transform(pos, n) {
     return pos;
 }
 
-function InitializeFromFen(fen, forbidden, redo) {
-    let board = new Float32Array(SIZE * SIZE);
+function InitializeFromFen(fen, forbidden, redo, inverse) {
+    let board = new Float32Array(BATCH * SIZE * SIZE);
 
     let row = 0;
     let col = 0;
@@ -241,10 +242,10 @@ function InitializeFromFen(fen, forbidden, redo) {
          let piece = 0;
          switch (c) {
             case 'w': 
-               piece = 1;
+               piece = inverse ? -1 : 1;
                break;
             case 'b': 
-               piece = -1;
+               piece = inverse ? 1 : -1;
                break;
             case 'X':
                piece = 0;
@@ -258,7 +259,7 @@ function InitializeFromFen(fen, forbidden, redo) {
 
     checkForbidden(board, forbidden);
 
-    const shape = [1, 1, 19, 19];
+    const shape = [BATCH, 1, SIZE, SIZE];
     return tf.tensor4d(board, shape, 'float32');
 }
 
@@ -270,9 +271,9 @@ function FormatMove(move) {
     return letters[col] + (SIZE - row);
 }
 
-async function predict(fen, redo, undo, result) {
+async function predict(fen, redo, undo, result, inverse) {
     let forbidden = [];
-    const d = InitializeFromFen(fen, forbidden, redo);
+    const d = InitializeFromFen(fen, forbidden, redo, inverse);
 
     const p = await model.predict(d);
     const r = await p.data();
@@ -284,47 +285,60 @@ async function predict(fen, redo, undo, result) {
         forbidden.push(180);
     }
 
-    for (let i = 0; i < r.length; i++) {
+    for (let i = 0; i < SIZE * SIZE; i++) {
         if (_.indexOf(forbidden, i) >= 0) continue;
         const p = r[i] * r[i] * r[i];
         result.push({
             pos: transform(i, undo),
-            weight: p
+            weight: inverse ? -p : p
         });
    }
 }
 
-async function FindMove(fen, callback, logger) {
-    const t0 = Date.now();
+async function InitModel() {
     if (model === null) {
         await tf.enableProdMode();
         await tf.setBackend('wasm');
         model = await tf.loadLayersModel(URL);
         console.log(tf.getBackend());
     }
+}
 
+async function FindMove(fen, callback, logger) {
+    const t0 = Date.now();
+    await InitModel();
     const t1 = Date.now();
     console.log('Load time: ' + (t1 - t0));
+
     let r = []; 
-    await predict(fen, 0, 0, r);
-    await predict(fen, 1, 1, r);
-    await predict(fen, 2, 2, r);
-    await predict(fen, 3, 3, r);
-    await predict(fen, 4, 5, r);
-    await predict(fen, 5, 4, r);
-    await predict(fen, 6, 8, r);
-    await predict(fen, 7, 9, r);
+    await predict(fen, 0, 0, r, false);
+    await predict(fen, 1, 1, r, false);
+    await predict(fen, 2, 2, r, false);
+    await predict(fen, 3, 3, r, false);
+    await predict(fen, 4, 5, r, false);
+    await predict(fen, 5, 4, r, false);
+    await predict(fen, 6, 8, r, false);
+    await predict(fen, 7, 9, r, false);
+
+    await predict(fen, 0, 0, r, true);
+    await predict(fen, 1, 1, r, true);
+    await predict(fen, 2, 2, r, true);
+    await predict(fen, 3, 3, r, true);
+    await predict(fen, 4, 5, r, true);
+    await predict(fen, 5, 4, r, true);
+    await predict(fen, 6, 8, r, true);
+    await predict(fen, 7, 9, r, true);
     const t2 = Date.now();
     console.log('Predict time: ' + (t2 - t1));
 
     r = _.sortBy(r, function(x) {
-        return -x.weight;
+        return -Math.abs(x.weight);
     });
 
     let sz = r.length; let ix = 0;
     if (sz < 1) return; sz = 1;
     while (sz < Math.min(r.length - 1, 5)) {
-        if (r[sz].weight * 2 < r[sz - 1].weight) break;
+        if (Math.abs(r[sz].weight) * 2 < Math.abs(r[sz - 1].weight)) break;
         sz++;
     }
     for (let i = 0; i < sz; i++) {
@@ -337,41 +351,44 @@ async function FindMove(fen, callback, logger) {
     }
 
     fen = ApplyMove(fen, r[ix].pos);
-    callback(r[ix].pos, fen, r[ix].weight * 1000, t2 - t0);
+    callback(r[ix].pos, fen, Math.abs(r[ix].weight) * 1000, t2 - t0);
 }
 
 async function Advisor(sid, fen, coeff, flags, callback) {
     const t0 = Date.now();
-    if (model === null) {
-        await tf.enableProdMode();
-        await tf.setBackend('wasm');
-        model = await tf.loadLayersModel(URL);
-        console.log(tf.getBackend());
-    }
-
+    await InitModel();
     const t1 = Date.now();
     console.log('Load time: ' + (t1 - t0));
 
     let r = []; 
-    if (flags & 0x01) await predict(fen, 0, 0, r);
-    if (flags & 0x02) await predict(fen, 1, 1, r);
-    if (flags & 0x04) await predict(fen, 2, 2, r);
-    if (flags & 0x08) await predict(fen, 3, 3, r);
-    if (flags & 0x10) await predict(fen, 4, 5, r);
-    if (flags & 0x20) await predict(fen, 5, 4, r);
-    if (flags & 0x40) await predict(fen, 6, 8, r);
-    if (flags & 0x80) await predict(fen, 7, 9, r);
+    if (flags & 0x01) await predict(fen, 0, 0, r, false);
+    if (flags & 0x02) await predict(fen, 1, 1, r, false);
+    if (flags & 0x04) await predict(fen, 2, 2, r, false);
+    if (flags & 0x08) await predict(fen, 3, 3, r, false);
+    if (flags & 0x10) await predict(fen, 4, 5, r, false);
+    if (flags & 0x20) await predict(fen, 5, 4, r, false);
+    if (flags & 0x40) await predict(fen, 6, 8, r, false);
+    if (flags & 0x80) await predict(fen, 7, 9, r, false);
+
+    if (flags & 0x01) await predict(fen, 0, 0, r, true);
+    if (flags & 0x02) await predict(fen, 1, 1, r, true);
+    if (flags & 0x04) await predict(fen, 2, 2, r, true);
+    if (flags & 0x08) await predict(fen, 3, 3, r, true);
+    if (flags & 0x10) await predict(fen, 4, 5, r, true);
+    if (flags & 0x20) await predict(fen, 5, 4, r, true);
+    if (flags & 0x40) await predict(fen, 6, 8, r, true);
+    if (flags & 0x80) await predict(fen, 7, 9, r, true);
     const t2 = Date.now();
     console.log('Predict time: ' + (t2 - t1));
 
     r = _.sortBy(r, function(x) {
-        return -x.weight;
+        return -Math.abs(x.weight);
     });
 
     let result = [];
     let sz = 0;
     while (sz < r.length - 1) {
-        if ((sz > 0) && (r[sz].weight * coeff < r[sz - 1].weight)) break;
+        if ((sz > 0) && (Math.abs(r[sz].weight) * coeff < Math.abs(r[sz - 1].weight))) break;
         if (sz > 10) break;
         result.push({
             sid: sid,
