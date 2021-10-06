@@ -71,6 +71,10 @@ function isEnemy(x) {
     return x < -0.1;
 }
 
+function isEmpty(x) {
+    return !isFriend(x) && !isEnemy(x);
+}
+
 function navigate(pos, dir) {
     let r = pos + dir;
     if (r >= SIZE * SIZE) return -1;
@@ -80,80 +84,152 @@ function navigate(pos, dir) {
     return r;
 }
 
-function checkForbidden(board, forbidden) {
-    let done = []; let atari = [];
+function analyze(board) {
+    let m = []; let r = []; let done = [];
     for (let p = 0; p < SIZE * SIZE; p++) {
-         if (_.indexOf(done, p) >= 0) continue;
-         if (isFriend(board[p])) {
-             let group = [p]; let dame = 0;
-             for (let i = 0; i < group.length; i++) {
-                 _.each([1, -1, SIZE, -SIZE], function(d) {
-                     let q = navigate(group[i], d);
-                     if (q < 0) return;
-                     if (_.indexOf(group, q) >= 0) return;
-                     if (isEnemy(board[q])) return;
-                     if (!isFriend(board[q])) {
-                         dame++;
-                         return;
-                     }
-                     group.push(q);
-                     done.push(q);
-                 });
-             }
-             if (dame < 2) atari = _.union(atari, group);
-             continue;
-         }
-         if (isEnemy(board[p])) continue;
-         let group = [p]; 
-         let enemy = 0; let friend = 0;
-         for (let i = 0; i < group.length; i++) {
-             _.each([1, -1, SIZE, -SIZE], function(d) {
-                let q = navigate(group[i], d);
+        if (!isEmpty(board[p])) continue;
+        if (_.indexOf(done, p) >= 0) continue;
+        let g = [p]; let c = null; let e = [];
+        for (let i = 0; i < g.length; i++) {
+            m[p] = r.length;
+            _.each([1, -1, SIZE, -SIZE], function(dir) {
+                let q = navigate(g[i], dir);
                 if (q < 0) return;
-                if (_.indexOf(group, q) >= 0) return;
-                if (isFriend(board[q])) {
-                    friend++;
-                    return;
-                }
+                if (_.indexOf(g, q) >= 0) return;
                 if (isEnemy(board[q])) {
-                    enemy++;
+                    if (c === null) c = -1;
+                    if (isFriend(c)) c = 0;
+                    e.push(q);
                     return;
                 }
-                group.push(q);
+                if (isFriend(board[q])) {
+                    if (c === null) c = 1;
+                    if (isEnemy(c)) c = 0;
+                    e.push(q);
+                    return;
+                }
+                g.push(q);
                 done.push(q);
-             });
-         }
-         if ((enemy < 1) && (group.length < 4)) {
-            _.each(group, function(p) {
-                forbidden.push(p);
             });
-         }
-         if ((friend < 1) && (group.length < 4)) {
-            _.each(group, function(p) {
-                forbidden.push(p);
-            });
-         }
+        }
+        r.push({
+            type:  0,
+            group: g,
+            color: c,
+            edge:  e
+        });
     }
     for (let p = 0; p < SIZE * SIZE; p++) {
-        if (isEnemy(board[p]) || isFriend(board[p])) continue;
-         let dame = 0; let f = false; let e = 0;
-         _.each([1, -1, SIZE, -SIZE], function(d) {
-            let q = navigate(p, d);
-            if (q < 0) return;
-            if (isEnemy(board[q])) {
-                e++;
-                return;
-            }
-            if (_.indexOf(atari, q) >= 0) {
-                f = true;
-                return;
-            }
-            if (isFriend(board[q])) return;
-            dame++;
-         });
-         if ((f && (dame < 1)) || (e == 4)) {
-             forbidden.push(p);
-         }
+        if (_.indexOf(done, p) >= 0) continue;
+        let f = isFriend(board[p]);
+        let g = [p]; let d = []; let y = []; let e = [];
+        for (let i = 0; i < g.length; i++) {
+            m[p] = r.length;
+            _.each([1, -1, SIZE, -SIZE], function(dir) {
+                let q = navigate(g[i], dir);
+                if (q < 0) return;
+                if (_.indexOf(g, q) >= 0) return;
+                if (isFriend(board[q])) {
+                    if (!f) {
+                        e.push(q);
+                        return;
+                    }
+                    g.push(q);
+                    done.push(q);
+                } else if (isEnemy(board[q])) {
+                    if (f) {
+                        e.push(q);
+                        return;
+                    }
+                    g.push(q);
+                    done.push(q);
+                } else {
+                    d.push(q);
+                    let ix = m[q];
+                    if (_.isUndefined(ix)) return;
+                    if (!isEmpty(r[ix].type)) return;
+                    if (f) {
+                        if (isFriend(r[ix].color)) {
+                            y.push(q);
+                            r[ix].isEye = true;
+                        }
+                    } else {
+                        if (isEnemy(r[ix].color)) {
+                            y.push(q);
+                            r[ix].isEye = true;
+                        }
+                    }
+                }
+                g.push(q);
+                done.push(q);
+            });
+        }
+        r.push({
+            type:  f ? 1 : -1,
+            group: g,
+            dame:  d,
+            eyes:  y,
+            edge:  e
+        });
+    }
+    return {
+        map: m,
+        res: r
+    }
+}
+
+function isDead(board, a, pos) {
+    let dame = 0;
+    _.each([1, -1, SIZE, -SIZE], function(d) {
+        let p = navigate(pos, d);
+        if (p < 0) return;
+        if (isFriend(board[p])) {
+            const ix = a.map[p];
+            if (_.isUndefined(ix)) return;
+            const d = a.res[ix].dame;
+            if (_.isUndefined(d)) return;
+            dame += d.length - 1;
+            return;
+        }
+        if (isEnemy(board[p])) return;
+        dame++;
+    });
+    return dame < 2;
+}
+
+function checkForbidden(board, forbidden, hints) {
+    const a = analyze(board); 
+    let m = null;
+    for (let i = 0; i < a.res.length; i++) {
+        if (!isEnemy(a.res[i].type)) continue;
+        if (a.res[i].dame.length != 1) continue;
+        if ((m !== null) && (m > a.res[i].dame.length)) continue;
+        hints.push(a.res[i].dame[0]);
+        m = a.res[i].dame.length;
+    }
+    if (m !== null) return;
+    m = null;
+    for (let i = 0; i < a.res.length; i++) {
+        if (!isFriend(a.res[i].type)) continue;
+        if (a.res[i].dame.length != 1) continue;
+        if ((m !== null) && (m > a.res[i].dame.length)) continue;
+        if (isDead(board, a, a.res[i].dame[0])) continue;
+        hints.push(a.res[i].dame[0]);
+        m = a.res[i].dame.length;
+    }
+    if (m !== null) return;
+    for (let p = 0; p < SIZE * SIZE; p++) {
+        const ix = a.map[p];
+        if (_.isUndefined(ix)) continue;
+        if (!isEmpty(a.res[ix].type)) continue;
+        if (a.res[ix].isEye) {
+            forbidden.push(p);
+            continue;
+        }
+        if (isDead(board, a, p)) {
+            forbidden.push(p);
+            continue;
+        }
     }
 }
 
@@ -219,7 +295,7 @@ function transform(pos, n) {
     return pos;
 }
 
-function InitializeFromFen(fen, forbidden, redo, inverse) {
+function InitializeFromFen(fen, forbidden, hints, redo, inverse) {
     let board = new Float32Array(BATCH * SIZE * SIZE);
 
     let row = 0;
@@ -257,7 +333,7 @@ function InitializeFromFen(fen, forbidden, redo, inverse) {
         col++;
     }
 
-    checkForbidden(board, forbidden);
+    checkForbidden(board, forbidden, hints);
 
     const shape = [BATCH, 1, SIZE, SIZE];
     return tf.tensor4d(board, shape, 'float32');
@@ -272,8 +348,8 @@ function FormatMove(move) {
 }
 
 async function predict(fen, redo, undo, result, inverse) {
-    let forbidden = [];
-    const d = InitializeFromFen(fen, forbidden, redo, inverse);
+    let forbidden = []; let hints = [];
+    const d = InitializeFromFen(fen, forbidden, hints, redo, inverse);
 
     const p = await model.predict(d);
     const r = await p.data();
@@ -310,30 +386,42 @@ async function FindMove(fen, callback, logger) {
     const t1 = Date.now();
     console.log('Load time: ' + (t1 - t0));
 
-    let r = []; 
-    await predict(fen, 0, 0, r, false);
-    await predict(fen, 1, 1, r, false);
-    await predict(fen, 2, 2, r, false);
-    await predict(fen, 3, 3, r, false);
-    await predict(fen, 4, 5, r, false);
-    await predict(fen, 5, 4, r, false);
-    await predict(fen, 6, 8, r, false);
-    await predict(fen, 7, 9, r, false);
+    let dummy = []; let hints = [];
+    InitializeFromFen(fen, dummy, hints, 0, false);
 
-    await predict(fen, 0, 0, r, true);
-    await predict(fen, 1, 1, r, true);
-    await predict(fen, 2, 2, r, true);
-    await predict(fen, 3, 3, r, true);
-    await predict(fen, 4, 5, r, true);
-    await predict(fen, 5, 4, r, true);
-    await predict(fen, 6, 8, r, true);
-    await predict(fen, 7, 9, r, true);
+    let r = []; 
+    if (hints.length == 0) {
+        await predict(fen, 0, 0, r, false);
+        await predict(fen, 1, 1, r, false);
+        await predict(fen, 2, 2, r, false);
+        await predict(fen, 3, 3, r, false);
+        await predict(fen, 4, 5, r, false);
+        await predict(fen, 5, 4, r, false);
+        await predict(fen, 6, 8, r, false);
+        await predict(fen, 7, 9, r, false);
+    
+        await predict(fen, 0, 0, r, true);
+        await predict(fen, 1, 1, r, true);
+        await predict(fen, 2, 2, r, true);
+        await predict(fen, 3, 3, r, true);
+        await predict(fen, 4, 5, r, true);
+        await predict(fen, 5, 4, r, true);
+        await predict(fen, 6, 8, r, true);
+        await predict(fen, 7, 9, r, true);
+
+        r = _.sortBy(r, function(x) {
+            return -Math.abs(x.weight);
+        });
+    } else {
+        r = _.map(hints, function(p) {
+            return {
+                pos: p,
+                weight: 1
+            };
+        });
+    }
     const t2 = Date.now();
     console.log('Predict time: ' + (t2 - t1));
-
-    r = _.sortBy(r, function(x) {
-        return -Math.abs(x.weight);
-    });
 
     let sz = r.length; let ix = 0;
     if (sz < 1) return; sz = 1;
