@@ -91,7 +91,8 @@ function analyze(board) {
         if (_.indexOf(done, p) >= 0) continue;
         let g = [p]; let c = null; let e = [];
         for (let i = 0; i < g.length; i++) {
-            m[p] = r.length;
+            m[ g[i] ] = r.length;
+            done.push(g[i]);
             _.each([1, -1, SIZE, -SIZE], function(dir) {
                 let q = navigate(g[i], dir);
                 if (q < 0) return;
@@ -109,7 +110,6 @@ function analyze(board) {
                     return;
                 }
                 g.push(q);
-                done.push(q);
             });
         }
         r.push({
@@ -124,7 +124,8 @@ function analyze(board) {
         let f = isFriend(board[p]);
         let g = [p]; let d = []; let y = []; let e = [];
         for (let i = 0; i < g.length; i++) {
-            m[p] = r.length;
+            m[ g[i] ] = r.length;
+            done.push(g[i]);
             _.each([1, -1, SIZE, -SIZE], function(dir) {
                 let q = navigate(g[i], dir);
                 if (q < 0) return;
@@ -133,16 +134,16 @@ function analyze(board) {
                     if (!f) {
                         e.push(q);
                         return;
+                    } else {
+                        g.push(q);
                     }
-                    g.push(q);
-                    done.push(q);
                 } else if (isEnemy(board[q])) {
                     if (f) {
                         e.push(q);
                         return;
+                    } else {
+                        g.push(q);
                     }
-                    g.push(q);
-                    done.push(q);
                 } else {
                     d.push(q);
                     let ix = m[q];
@@ -160,8 +161,6 @@ function analyze(board) {
                         }
                     }
                 }
-                g.push(q);
-                done.push(q);
             });
         }
         r.push({
@@ -207,17 +206,16 @@ function checkForbidden(board, forbidden, hints) {
         hints.push(a.res[i].dame[0]);
         m = a.res[i].dame.length;
     }
-    if (m !== null) return;
-    m = null;
-    for (let i = 0; i < a.res.length; i++) {
-        if (!isFriend(a.res[i].type)) continue;
-        if (a.res[i].dame.length != 1) continue;
-        if ((m !== null) && (m > a.res[i].dame.length)) continue;
-        if (isDead(board, a, a.res[i].dame[0])) continue;
-        hints.push(a.res[i].dame[0]);
-        m = a.res[i].dame.length;
+    if (m === null) {
+        for (let i = 0; i < a.res.length; i++) {
+            if (!isFriend(a.res[i].type)) continue;
+            if (a.res[i].dame.length != 1) continue;
+            if ((m !== null) && (m > a.res[i].dame.length)) continue;
+            if (isDead(board, a, a.res[i].dame[0])) continue;
+            hints.push(a.res[i].dame[0]);
+            m = a.res[i].dame.length;
+        }
     }
-    if (m !== null) return;
     for (let p = 0; p < SIZE * SIZE; p++) {
         const ix = a.map[p];
         if (_.isUndefined(ix)) continue;
