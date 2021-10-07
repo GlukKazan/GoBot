@@ -179,8 +179,8 @@ function analyze(board) {
 
 function isDead(board, a, pos) {
     let dame = 0;
-    _.each([1, -1, SIZE, -SIZE], function(d) {
-        let p = navigate(pos, d);
+    _.each([1, -1, SIZE, -SIZE], function(dir) {
+        let p = navigate(pos, dir);
         if (p < 0) return;
         if (isFriend(board[p])) {
             const ix = a.map[p];
@@ -196,36 +196,129 @@ function isDead(board, a, pos) {
     return dame < 2;
 }
 
+function isSecondLine(board, pos) {
+    let r = false;
+    _.each([1, -1, SIZE, -SIZE], function(dir) {
+        const p = navigate(pos, dir);
+        if (p < 0) return;
+        if (!isFriend(board[p])) return;
+        const q = navigate(pos, -dir);
+        if (q < 0) return;
+        if (navigate(q, -dir) < 0) r = true;
+    });
+    return r;
+}
+
+function isDoubleAtari(a, pos) {
+    let r = [];
+    _.each([1, -1, SIZE, -SIZE], function(dir) {
+        const p = navigate(pos, dir);
+        if (p < 0) return;
+        const ix = a.map[p];
+        if (_.isUndefined(ix)) return;
+        if (_.indexOf(r, ix) >= 0) return;
+        if (!isEnemy(a.res[ix].type)) return;
+        if (a.res[ix].dame.length > 2) return;
+        r.push(ix);
+    });
+    return r.length > 1;
+}
+
+function isSecondLineAtariThreat(a, pos) {
+    let e = 0; let d = 0; let b = 0;
+    _.each([1, -1, SIZE, -SIZE], function(dir) {
+        const p = navigate(pos, dir);
+        if (p < 0) return;
+        const ix = a.map[p];
+        if (_.isUndefined(ix)) return;
+        if (isEnemy(a.res[ix].type) || (isFriend(a.res[ix].type) && (a.res[ix].dame.length == 1))) {
+            e++;
+            return;
+        }
+        if (isEmpty(a.res[ix].type)) {
+            const q = navigate(p, dir);
+            if (q < 0) {
+                b++;
+            } else {
+                d++;
+            }
+        }
+    });
+    return (e == 2) && (d == 1) && (b == 1);
+}
+
+function isFirstLine(pos) {
+    let r = false;
+    _.each([1, -1, SIZE, -SIZE], function(dir) {
+        const p = navigate(pos, dir);
+        if (p < 0) r = true;
+    });
+    return r;
+}
+
 function checkForbidden(board, forbidden, hints) {
     const a = analyze(board); 
-    let m = null;
+    let m = null; let f = false;
+    // Capturing
     for (let i = 0; i < a.res.length; i++) {
         if (!isEnemy(a.res[i].type)) continue;
         if (a.res[i].dame.length != 1) continue;
         if ((m !== null) && (m > a.res[i].dame.length)) continue;
         hints.push(a.res[i].dame[0]);
         m = a.res[i].dame.length;
+        f = true;
     }
-    if (m === null) {
+    // Defence
+    if (!f) {
         for (let i = 0; i < a.res.length; i++) {
             if (!isFriend(a.res[i].type)) continue;
             if (a.res[i].dame.length != 1) continue;
+            if (isSecondLine(board, a.res[i].dame[0])) {
+                forbidden.push(a.res[i].dame[0]);
+                continue;
+            }
             if ((m !== null) && (m > a.res[i].dame.length)) continue;
             if (isDead(board, a, a.res[i].dame[0])) continue;
             hints.push(a.res[i].dame[0]);
             m = a.res[i].dame.length;
+        }
+        // Second line Atari
+        for (let i = 0; i < a.res.length; i++) {
+            if (!isEnemy(a.res[i].type)) continue;
+            if (a.res[i].dame.length != 2) continue;
+            var p = null;
+            for (let j = 0; j < a.res[i].dame.length; j++) {
+                if (isFirstLine(a.res[i].dame[j])) p = a.res[i].dame[j];
+            }
+            if (p === null) continue;
+            _.each(_.without(a.res[i].dame, p), function(q) {
+                hints.push(q);
+            });
         }
     }
     for (let p = 0; p < SIZE * SIZE; p++) {
         const ix = a.map[p];
         if (_.isUndefined(ix)) continue;
         if (!isEmpty(a.res[ix].type)) continue;
+        // Eyes filling
         if (a.res[ix].isEye) {
             forbidden.push(p);
             continue;
         }
+        // Atari threat
         if (isDead(board, a, p)) {
             forbidden.push(p);
+            continue;
+        }
+        // Second line Atari threat
+        if (isSecondLineAtariThreat(a, p)) {
+            forbidden.push(p);
+            continue;
+        }
+        if (f) continue;
+        // Double Atari
+        if (isDoubleAtari(a, p)) {
+            hints.push(p);
             continue;
         }
     }
