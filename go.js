@@ -2,6 +2,7 @@
 
 const tf = require('@tensorflow/tfjs'); 
 const wasm = require('@tensorflow/tfjs-backend-wasm');
+const {nodeFileSystemRouter} = require('@tensorflow/tfjs-node/dist/io/file_system');
 
 const _ = require('underscore');
 
@@ -477,13 +478,29 @@ async function predict(fen, redo, undo, result, inverse) {
    }
 }
 
+function freeze() {
+    for (let i = 0; i < 12; i++) {
+        let l = model.getLayer(null, i);
+        l.trainable = false;
+    }
+}
+
 async function InitModel() {
     if (model === null) {
         await tf.enableProdMode();
         await tf.setBackend('wasm');
+
+        tf.io.registerLoadRouter(nodeFileSystemRouter);
+        tf.io.registerSaveRouter(nodeFileSystemRouter);
+
         model = await tf.loadLayersModel(URL);
         console.log(tf.getBackend());
+        freeze();
     }
+}
+
+async function SaveModel(savePath) {
+    await model.save(`file:///tmp/${savePath}`);
 }
 
 async function FindMove(fen, callback, logger) {
