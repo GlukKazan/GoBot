@@ -10,57 +10,70 @@ const SIZE = 19;
 const BATCH = 1;
 
 let model = null;
+let board = null;
+let stat  = null;
 
-function ApplyMove(fen, move) {
-    let r = '';
-
-    let ix = 0;
-    let row = 0;
-    let col = 0;
-
-    for (let i = 0; i < fen.length; i++) {
-         let c = fen.charAt(i);
-
-         if (c == '/') {
-             row++;
-             col = 0;
-             r += c;
-             continue;
-         }
-
-         if (c >= '0' && c <= '9') {
-             let n = 0;
-             for (let j = 0; j < parseInt(c); j++) {
-                 if (ix == move) {
-                    if (n > 0) r += n;
-                    n = 0;
-                    r += 'b';
-                 } else {
-                    n++;
-                 }
-                 ix++;
-                 col++;
-             }
-             if (n > 0) r += n;
-             continue;
-         }
-
-         switch (c) {
-            case 'w': 
-               r += 'b';
-               break;
-            case 'b': 
-               r += 'w';
-               break;
-            case 'X':
-               r += '1';
-               break;
-        }
-        col++;
-        ix++;
+function RedoMove(fen, move) {
+    if ((board === null) || (stat === null)) {
+        board = null; stat = null;
+        let dummy = []; let hints = [];
+        InitializeFromFen(fen, dummy, hints, 0, false);
+        return;
     }
 
+    _.each([1, -1, SIZE, -SIZE], function(dir) {
+        let p = navigate(move, dir);
+        if (p < 0) return;
+        let ix = stat.map[p];
+        if (_.isUndefined(ix)) return;
+        if (!isEnemy(stat.res[ix].type)) return;
+        if (stat.res[ix].dame.length > 1) return;
+        _.each(stat.res[ix].group, function (q) {
+            board[q] = 0;
+        });
+    });
+
+    board[move] = 1;
+    return board;
+}
+
+function GetFen(board) {
+    let r = "";
+
+    for (let row = 0; row < SIZE; row++) {
+        if (row != 0) r += '/';
+        let empty = 0;
+        for (let col = 0; col < SIZE; col++) {
+            let piece = board[row * SIZE + col];
+            if (isEmpty(piece)) {
+                if (empty > 8) {
+                    r += empty;
+                    empty = 0;
+                }
+                empty++;
+            }
+            else {
+                if (empty != 0) 
+                    r += empty;
+                empty = 0;
+                if (isFriend(piece)) {
+                    r += 'b';
+                } else {
+                    r += 'w';
+                }
+            }
+        }
+        if (empty != 0) {
+            r += empty;
+        }
+    }
+    
     return r;
+}
+
+function ApplyMove(fen, move) {
+    let b = RedoMove(fen, move);
+    return GetFen(b);
 }
 
 function isFriend(x) {
@@ -256,8 +269,9 @@ function isFirstLine(pos) {
     return r;
 }
 
-function checkForbidden(board, forbidden, hints) {
+function checkForbidden(board, forbidden, hints, redo) {
     const a = analyze(board); 
+    if ((redo == 0) && (stat === null)) stat = a;
     let m = null; let f = false;
     // Capturing
     for (let i = 0; i < a.res.length; i++) {
@@ -286,7 +300,7 @@ function checkForbidden(board, forbidden, hints) {
         for (let i = 0; i < a.res.length; i++) {
             if (!isEnemy(a.res[i].type)) continue;
             if (a.res[i].dame.length != 2) continue;
-            var p = null;
+            let p = null;
             for (let j = 0; j < a.res[i].dame.length; j++) {
                 if (isFirstLine(a.res[i].dame[j])) p = a.res[i].dame[j];
             }
@@ -301,7 +315,7 @@ function checkForbidden(board, forbidden, hints) {
         if (_.isUndefined(ix)) continue;
         if (!isEmpty(a.res[ix].type)) continue;
         // Eyes filling
-        if (a.res[ix].isEye) {
+        if (a.res[ix].isEye && (a.res[ix].group.length < 5)) {
             forbidden.push(p);
             continue;
         }
@@ -387,7 +401,8 @@ function transform(pos, n) {
 }
 
 function InitializeFromFen(fen, forbidden, hints, redo, inverse) {
-    let board = new Float32Array(BATCH * SIZE * SIZE);
+    let b = new Float32Array(BATCH * SIZE * SIZE);
+    if ((redo == 0) && (board === null)) board = b;
 
     let row = 0;
     let col = 0;
@@ -419,15 +434,15 @@ function InitializeFromFen(fen, forbidden, hints, redo, inverse) {
                break;
         }
         const pos = transform(row * SIZE + col, redo);
-        board[pos] = piece;
+        b[pos] = piece;
         forbidden.push(pos);
         col++;
     }
 
-    checkForbidden(board, forbidden, hints);
+    checkForbidden(b, forbidden, hints, redo);
 
     const shape = [BATCH, 1, SIZE, SIZE];
-    return tf.tensor4d(board, shape, 'float32');
+    return tf.tensor4d(b, shape, 'float32');
 }
 
 function FormatMove(move) {
@@ -472,6 +487,8 @@ async function InitModel() {
 }
 
 async function FindMove(fen, callback, logger) {
+    board = null; stat = null;
+
     const t0 = Date.now();
     await InitModel();
     const t1 = Date.now();
@@ -482,15 +499,6 @@ async function FindMove(fen, callback, logger) {
 
     let r = []; 
     if (hints.length == 0) {
-        await predict(fen, 0, 0, r, false);
-        await predict(fen, 1, 1, r, false);
-        await predict(fen, 2, 2, r, false);
-        await predict(fen, 3, 3, r, false);
-        await predict(fen, 4, 5, r, false);
-        await predict(fen, 5, 4, r, false);
-        await predict(fen, 6, 8, r, false);
-        await predict(fen, 7, 9, r, false);
-    
         await predict(fen, 0, 0, r, true);
         await predict(fen, 1, 1, r, true);
         await predict(fen, 2, 2, r, true);
@@ -499,6 +507,15 @@ async function FindMove(fen, callback, logger) {
         await predict(fen, 5, 4, r, true);
         await predict(fen, 6, 8, r, true);
         await predict(fen, 7, 9, r, true);
+
+        await predict(fen, 0, 0, r, false);
+        await predict(fen, 1, 1, r, false);
+        await predict(fen, 2, 2, r, false);
+        await predict(fen, 3, 3, r, false);
+        await predict(fen, 4, 5, r, false);
+        await predict(fen, 5, 4, r, false);
+        await predict(fen, 6, 8, r, false);
+        await predict(fen, 7, 9, r, false);
 
         r = _.sortBy(r, function(x) {
             return -Math.abs(x.weight);
@@ -534,21 +551,14 @@ async function FindMove(fen, callback, logger) {
 }
 
 async function Advisor(sid, fen, coeff, flags, callback) {
+    board = null; stat = null;
+
     const t0 = Date.now();
     await InitModel();
     const t1 = Date.now();
     console.log('Load time: ' + (t1 - t0));
 
     let r = []; 
-    if (flags & 0x01) await predict(fen, 0, 0, r, false);
-    if (flags & 0x02) await predict(fen, 1, 1, r, false);
-    if (flags & 0x04) await predict(fen, 2, 2, r, false);
-    if (flags & 0x08) await predict(fen, 3, 3, r, false);
-    if (flags & 0x10) await predict(fen, 4, 5, r, false);
-    if (flags & 0x20) await predict(fen, 5, 4, r, false);
-    if (flags & 0x40) await predict(fen, 6, 8, r, false);
-    if (flags & 0x80) await predict(fen, 7, 9, r, false);
-
     if (flags & 0x01) await predict(fen, 0, 0, r, true);
     if (flags & 0x02) await predict(fen, 1, 1, r, true);
     if (flags & 0x04) await predict(fen, 2, 2, r, true);
@@ -557,6 +567,15 @@ async function Advisor(sid, fen, coeff, flags, callback) {
     if (flags & 0x20) await predict(fen, 5, 4, r, true);
     if (flags & 0x40) await predict(fen, 6, 8, r, true);
     if (flags & 0x80) await predict(fen, 7, 9, r, true);
+
+    if (flags & 0x01) await predict(fen, 0, 0, r, false);
+    if (flags & 0x02) await predict(fen, 1, 1, r, false);
+    if (flags & 0x04) await predict(fen, 2, 2, r, false);
+    if (flags & 0x08) await predict(fen, 3, 3, r, false);
+    if (flags & 0x10) await predict(fen, 4, 5, r, false);
+    if (flags & 0x20) await predict(fen, 5, 4, r, false);
+    if (flags & 0x40) await predict(fen, 6, 8, r, false);
+    if (flags & 0x80) await predict(fen, 7, 9, r, false);
     const t2 = Date.now();
     console.log('Predict time: ' + (t2 - t1));
 
