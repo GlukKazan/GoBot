@@ -13,6 +13,7 @@ const BATCH = 1;
 let model = null;
 let board = null;
 let stat  = null;
+let cnt   = 0;
 
 function RedoMove(fen, move) {
     _.each([1, -1, SIZE, -SIZE], function(dir) {
@@ -476,10 +477,6 @@ async function InitModel() {
     }
 }
 
-async function SaveModel(savePath) {
-    await model.save(`file:///tmp/${savePath}`);
-}
-
 async function FindMove(fen, callback, logger) {
     board = new Float32Array(16 * SIZE * SIZE);
 
@@ -661,6 +658,49 @@ async function Advisor(sid, fen, coeff, callback) {
     callback(result, t2 - t0);
 }
 
+async function SaveModel(savePath) {
+    await model.save(`file:///tmp/${savePath}`);
+}
+
+async function Fit(data, logger) {
+    const batch = data.length;
+    board = new Float32Array(batch * SIZE * SIZE);
+
+    const t0 = Date.now();
+    await InitModel();
+    const t1 = Date.now();
+    console.log('Load time: ' + (t1 - t0));
+
+    let y = new Float32Array(batch * SIZE * SIZE);    
+    let forbidden = []; let ix = 0;
+    _.each(data, function(d) {
+        y[d.pos + (ix * SIZE * SIZE)] = 1;
+        InitializeFromFen(d.fen, forbidden, 0, false, ix); ix++;
+        console.log('fen = ' + d.fen + ', move = ' + d.pos);
+        logger.info('fen = ' + d.fen + ', move = ' + d.pos);
+    });
+    const xshape = [batch, 1, SIZE, SIZE];
+    const xs = tf.tensor4d(board, xshape, 'float32');
+    const yshape = [batch, SIZE * SIZE];
+    const ys =  tf.tensor2d(y, yshape, 'float32');
+
+    model.compile({optimizer: 'sgd', loss: 'categoricalCrossentropy', metrics: ['accuracy']});
+    const h = await model.fit(xs, ys, {
+        batchSize: batch,
+        epochs: 5
+    });    
+    console.log(h);
+    const t2 = Date.now();
+    console.log('Fit time: ' + (t2 - t1));
+
+    xs.dispose();
+    ys.dispose();
+
+    cnt++;
+    await SaveModel('model_' + cnt + '.json');
+}
+
 module.exports.FindMove = FindMove;
 module.exports.FormatMove = FormatMove;
 module.exports.Advisor = Advisor;
+module.exports.Fit = Fit;
