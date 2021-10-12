@@ -15,13 +15,6 @@ let board = null;
 let stat  = null;
 
 function RedoMove(fen, move) {
-    if ((board === null) || (stat === null)) {
-        board = null; stat = null;
-        let dummy = []; let hints = [];
-        InitializeFromFen(fen, dummy, hints, 0, false);
-        return;
-    }
-
     _.each([1, -1, SIZE, -SIZE], function(dir) {
         let p = navigate(move, dir);
         if (p < 0) return;
@@ -33,7 +26,6 @@ function RedoMove(fen, move) {
             board[q] = 0;
         });
     });
-
     board[move] = 1;
     return board;
 }
@@ -270,9 +262,8 @@ function isFirstLine(pos) {
     return r;
 }
 
-function checkForbidden(board, forbidden, hints, redo) {
+function checkForbidden(board, forbidden, hints) {
     const a = analyze(board); 
-    if ((redo == 0) && (stat === null)) stat = a;
     let m = null; let f = false;
     // Capturing
     for (let i = 0; i < a.res.length; i++) {
@@ -339,6 +330,7 @@ function checkForbidden(board, forbidden, hints, redo) {
             continue;
         }
     }
+    return a;
 }
 
 function flipX(pos) {
@@ -403,9 +395,8 @@ function transform(pos, n) {
     return pos;
 }
 
-function InitializeFromFen(fen, forbidden, hints, redo, inverse) {
-    let b = new Float32Array(BATCH * SIZE * SIZE);
-    if ((redo == 0) && (board === null)) board = b;
+function InitializeFromFen(fen, forbidden, redo, inverse, batch) {
+    const offset = batch * SIZE * SIZE;
 
     let row = 0;
     let col = 0;
@@ -436,16 +427,11 @@ function InitializeFromFen(fen, forbidden, hints, redo, inverse) {
                piece = 0;
                break;
         }
-        const pos = transform(row * SIZE + col, redo);
-        b[pos] = piece;
+        const pos = transform(row * SIZE + col, redo) + offset;
+        board[pos] = piece;
         forbidden.push(pos);
         col++;
     }
-
-    checkForbidden(b, forbidden, hints, redo);
-
-    const shape = [BATCH, 1, SIZE, SIZE];
-    return tf.tensor4d(b, shape, 'float32');
 }
 
 function FormatMove(move) {
@@ -456,28 +442,17 @@ function FormatMove(move) {
     return letters[col] + (SIZE - row);
 }
 
-async function predict(fen, redo, undo, result, inverse) {
-    let forbidden = []; let hints = [];
-    const d = InitializeFromFen(fen, forbidden, hints, redo, inverse);
-
-    const p = await model.predict(d);
-    const r = await p.data();
-
-    d.dispose();
-    p.dispose();
-
-    if (forbidden.length < 10) {
-        forbidden.push(180);
-    }
-
+function ExtractData(data, res, forbidden, undo, inverse, batch) {
+    const offset = batch * SIZE * SIZE;
     for (let i = 0; i < SIZE * SIZE; i++) {
-        if (_.indexOf(forbidden, i) >= 0) continue;
-        const p = r[i] * r[i] * r[i];
-        result.push({
-            pos: transform(i, undo),
-            weight: inverse ? -p : p
+        const w = data[i + offset] * data[i + offset] * data[i + offset];
+        const p = transform(i, undo);
+        if (_.indexOf(forbidden, p) >= 0) continue;
+        res.push({
+            pos: p,
+            weight: inverse ? -w : w
         });
-   }
+    }
 }
 
 function freeze() {
@@ -506,35 +481,67 @@ async function SaveModel(savePath) {
 }
 
 async function FindMove(fen, callback, logger) {
-    board = null; stat = null;
+    board = new Float32Array(16 * SIZE * SIZE);
 
     const t0 = Date.now();
     await InitModel();
     const t1 = Date.now();
     console.log('Load time: ' + (t1 - t0));
 
-    let dummy = []; let hints = [];
-    InitializeFromFen(fen, dummy, hints, 0, false);
+    let forbidden = []; let hints = []; let batch = 0;
+    InitializeFromFen(fen, forbidden, 0, false, batch); batch++;
+    stat = checkForbidden(board, forbidden, hints);
+
+    if (forbidden.length < 10) {
+        forbidden.push(180);
+    }
 
     let r = []; 
     if (hints.length == 0) {
-        await predict(fen, 0, 0, r, true);
-        await predict(fen, 1, 1, r, true);
-        await predict(fen, 2, 2, r, true);
-        await predict(fen, 3, 3, r, true);
-        await predict(fen, 4, 5, r, true);
-        await predict(fen, 5, 4, r, true);
-        await predict(fen, 6, 8, r, true);
-        await predict(fen, 7, 9, r, true);
+        let dummy = [];
+        InitializeFromFen(fen, dummy, 1, false, batch); batch++;
+        InitializeFromFen(fen, dummy, 2, false, batch); batch++;
+        InitializeFromFen(fen, dummy, 3, false, batch); batch++;
+        InitializeFromFen(fen, dummy, 4, false, batch); batch++;
+        InitializeFromFen(fen, dummy, 5, false, batch); batch++;
+        InitializeFromFen(fen, dummy, 6, false, batch); batch++;
+        InitializeFromFen(fen, dummy, 7, false, batch); batch++;
+    
+        InitializeFromFen(fen, dummy, 0, true, batch); batch++;
+        InitializeFromFen(fen, dummy, 1, true, batch); batch++;
+        InitializeFromFen(fen, dummy, 2, true, batch); batch++;
+        InitializeFromFen(fen, dummy, 3, true, batch); batch++;
+        InitializeFromFen(fen, dummy, 4, true, batch); batch++;
+        InitializeFromFen(fen, dummy, 5, true, batch); batch++;
+        InitializeFromFen(fen, dummy, 6, true, batch); batch++;
+        InitializeFromFen(fen, dummy, 7, true, batch); batch++;
+    
+        const shape = [16, 1, SIZE, SIZE];
+        const d = tf.tensor4d(board, shape, 'float32');
+        const p = await model.predict(d);
+        const x = await p.data();
+    
+        d.dispose();
+        p.dispose();
 
-        await predict(fen, 0, 0, r, false);
-        await predict(fen, 1, 1, r, false);
-        await predict(fen, 2, 2, r, false);
-        await predict(fen, 3, 3, r, false);
-        await predict(fen, 4, 5, r, false);
-        await predict(fen, 5, 4, r, false);
-        await predict(fen, 6, 8, r, false);
-        await predict(fen, 7, 9, r, false);
+        batch = 0;
+        ExtractData(x, r, forbidden, 0, false, batch); batch++;
+        ExtractData(x, r, forbidden, 1, false, batch); batch++;
+        ExtractData(x, r, forbidden, 2, false, batch); batch++;
+        ExtractData(x, r, forbidden, 3, false, batch); batch++;
+        ExtractData(x, r, forbidden, 5, false, batch); batch++;
+        ExtractData(x, r, forbidden, 4, false, batch); batch++;
+        ExtractData(x, r, forbidden, 8, false, batch); batch++;
+        ExtractData(x, r, forbidden, 9, false, batch); batch++;
+
+        ExtractData(x, r, forbidden, 0, true, batch); batch++;
+        ExtractData(x, r, forbidden, 1, true, batch); batch++;
+        ExtractData(x, r, forbidden, 2, true, batch); batch++;
+        ExtractData(x, r, forbidden, 3, true, batch); batch++;
+        ExtractData(x, r, forbidden, 5, true, batch); batch++;
+        ExtractData(x, r, forbidden, 4, true, batch); batch++;
+        ExtractData(x, r, forbidden, 8, true, batch); batch++;
+        ExtractData(x, r, forbidden, 9, true, batch); batch++;
 
         r = _.sortBy(r, function(x) {
             return -Math.abs(x.weight);
@@ -569,32 +576,68 @@ async function FindMove(fen, callback, logger) {
     callback(r[ix].pos, fen, Math.abs(r[ix].weight) * 1000, t2 - t0);
 }
 
-async function Advisor(sid, fen, coeff, flags, callback) {
-    board = null; stat = null;
+async function Advisor(sid, fen, coeff, callback) {
+    board = new Float32Array(16 * SIZE * SIZE);
 
     const t0 = Date.now();
     await InitModel();
     const t1 = Date.now();
     console.log('Load time: ' + (t1 - t0));
 
-    let r = []; 
-    if (flags & 0x01) await predict(fen, 0, 0, r, true);
-    if (flags & 0x02) await predict(fen, 1, 1, r, true);
-    if (flags & 0x04) await predict(fen, 2, 2, r, true);
-    if (flags & 0x08) await predict(fen, 3, 3, r, true);
-    if (flags & 0x10) await predict(fen, 4, 5, r, true);
-    if (flags & 0x20) await predict(fen, 5, 4, r, true);
-    if (flags & 0x40) await predict(fen, 6, 8, r, true);
-    if (flags & 0x80) await predict(fen, 7, 9, r, true);
+    let forbidden = []; let hints = []; let batch = 0;
+    InitializeFromFen(fen, forbidden, 0, false, batch); batch++;
+    stat = checkForbidden(board, forbidden, hints);
 
-    if (flags & 0x01) await predict(fen, 0, 0, r, false);
-    if (flags & 0x02) await predict(fen, 1, 1, r, false);
-    if (flags & 0x04) await predict(fen, 2, 2, r, false);
-    if (flags & 0x08) await predict(fen, 3, 3, r, false);
-    if (flags & 0x10) await predict(fen, 4, 5, r, false);
-    if (flags & 0x20) await predict(fen, 5, 4, r, false);
-    if (flags & 0x40) await predict(fen, 6, 8, r, false);
-    if (flags & 0x80) await predict(fen, 7, 9, r, false);
+    if (forbidden.length < 10) {
+        forbidden.push(180);
+    }
+
+    let r = []; 
+    let dummy = [];
+    InitializeFromFen(fen, dummy, 1, false, batch); batch++;
+    InitializeFromFen(fen, dummy, 2, false, batch); batch++;
+    InitializeFromFen(fen, dummy, 3, false, batch); batch++;
+    InitializeFromFen(fen, dummy, 4, false, batch); batch++;
+    InitializeFromFen(fen, dummy, 5, false, batch); batch++;
+    InitializeFromFen(fen, dummy, 6, false, batch); batch++;
+    InitializeFromFen(fen, dummy, 7, false, batch); batch++;
+
+    InitializeFromFen(fen, dummy, 0, true, batch); batch++;
+    InitializeFromFen(fen, dummy, 1, true, batch); batch++;
+    InitializeFromFen(fen, dummy, 2, true, batch); batch++;
+    InitializeFromFen(fen, dummy, 3, true, batch); batch++;
+    InitializeFromFen(fen, dummy, 4, true, batch); batch++;
+    InitializeFromFen(fen, dummy, 5, true, batch); batch++;
+    InitializeFromFen(fen, dummy, 6, true, batch); batch++;
+    InitializeFromFen(fen, dummy, 7, true, batch); batch++;
+
+    const shape = [16, 1, SIZE, SIZE];
+    const d = tf.tensor4d(board, shape, 'float32');
+    const p = await model.predict(d);
+    const x = await p.data();
+
+    d.dispose();
+    p.dispose();
+
+    batch = 0;
+    ExtractData(x, r, forbidden, 0, false, batch); batch++;
+    ExtractData(x, r, forbidden, 1, false, batch); batch++;
+    ExtractData(x, r, forbidden, 2, false, batch); batch++;
+    ExtractData(x, r, forbidden, 3, false, batch); batch++;
+    ExtractData(x, r, forbidden, 5, false, batch); batch++;
+    ExtractData(x, r, forbidden, 4, false, batch); batch++;
+    ExtractData(x, r, forbidden, 8, false, batch); batch++;
+    ExtractData(x, r, forbidden, 9, false, batch); batch++;
+
+    ExtractData(x, r, forbidden, 0, true, batch); batch++;
+    ExtractData(x, r, forbidden, 1, true, batch); batch++;
+    ExtractData(x, r, forbidden, 2, true, batch); batch++;
+    ExtractData(x, r, forbidden, 3, true, batch); batch++;
+    ExtractData(x, r, forbidden, 5, true, batch); batch++;
+    ExtractData(x, r, forbidden, 4, true, batch); batch++;
+    ExtractData(x, r, forbidden, 8, true, batch); batch++;
+    ExtractData(x, r, forbidden, 9, true, batch); batch++;
+
     const t2 = Date.now();
     console.log('Predict time: ' + (t2 - t1));
 
