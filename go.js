@@ -114,13 +114,13 @@ function analyze(board) {
                 if (isEnemy(board[q])) {
                     if (c === null) c = -1;
                     if (isFriend(c)) c = 0;
-                    e.push(q);
+                    if (_.indexOf(e, q) < 0) e.push(q);
                     return;
                 }
                 if (isFriend(board[q])) {
                     if (c === null) c = 1;
                     if (isEnemy(c)) c = 0;
-                    e.push(q);
+                    if (_.indexOf(e, q) < 0) e.push(q);
                     return;
                 }
                 g.push(q);
@@ -146,31 +146,31 @@ function analyze(board) {
                 if (_.indexOf(g, q) >= 0) return;
                 if (isFriend(board[q])) {
                     if (!f) {
-                        e.push(q);
+                        if (_.indexOf(e, q) < 0) e.push(q);
                         return;
                     } else {
-                        g.push(q);
+                        if (_.indexOf(g, q) < 0) g.push(q);
                     }
                 } else if (isEnemy(board[q])) {
                     if (f) {
-                        e.push(q);
+                        if (_.indexOf(e, q) < 0) e.push(q);
                         return;
                     } else {
-                        g.push(q);
+                        if (_.indexOf(g, q) < 0) g.push(q);
                     }
                 } else {
-                    d.push(q);
+                    if (_.indexOf(d, q) < 0) d.push(q);
                     let ix = m[q];
                     if (_.isUndefined(ix)) return;
                     if (!isEmpty(r[ix].type)) return;
                     if (f) {
                         if (isFriend(r[ix].color)) {
-                            y.push(q);
+                            if (_.indexOf(y, q) < 0) y.push(q);
                             r[ix].isEye = true;
                         }
                     } else {
                         if (isEnemy(r[ix].color)) {
-                            y.push(q);
+                            if (_.indexOf(y, q) < 0) y.push(q);
                             r[ix].isEye = true;
                         }
                     }
@@ -278,9 +278,10 @@ function checkForbidden(board, forbidden, hints, redo) {
     for (let i = 0; i < a.res.length; i++) {
         if (!isEnemy(a.res[i].type)) continue;
         if (a.res[i].dame.length != 1) continue;
-        if ((m !== null) && (m > a.res[i].dame.length)) continue;
+        if ((m !== null) && (m > a.res[i].group.length)) continue;
+        m = a.res[i].group.length;
+        hints.length = 0;
         hints.push(a.res[i].dame[0]);
-        m = a.res[i].dame.length;
         f = true;
     }
     // Defence
@@ -292,10 +293,11 @@ function checkForbidden(board, forbidden, hints, redo) {
                 forbidden.push(a.res[i].dame[0]);
                 continue;
             }
-            if ((m !== null) && (m > a.res[i].dame.length)) continue;
             if (isDead(board, a, a.res[i].dame[0])) continue;
+            if ((m !== null) && (m > a.res[i].group.length)) continue;
+            m = a.res[i].group.length;
+            hints.length = 0;
             hints.push(a.res[i].dame[0]);
-            m = a.res[i].dame.length;
         }
         // Second line Atari
         for (let i = 0; i < a.res.length; i++) {
