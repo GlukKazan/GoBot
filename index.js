@@ -124,7 +124,7 @@ let getConfirmed = function(app) {
 let learn = function(app) {
     //  console.log('LERN');
     app.state = STATE.WAIT;
-    axios.delete(SERVICE + '/api/ai/fit/2/10', {
+    axios.delete(SERVICE + '/api/ai/fit/2/1000', {
         headers: { Authorization: `Bearer ${TOKEN}` }
     })
     .then(function (response) {

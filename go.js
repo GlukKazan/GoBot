@@ -15,7 +15,7 @@ let board = null;
 let stat  = null;
 let cnt   = 0;
 
-function RedoMove(fen, move) {
+function RedoMove(move) {
     _.each([1, -1, SIZE, -SIZE], function(dir) {
         let p = navigate(move, dir);
         if (p < 0) return;
@@ -65,8 +65,8 @@ function GetFen(board) {
     return r;
 }
 
-function ApplyMove(fen, move) {
-    let b = RedoMove(fen, move);
+function ApplyMove(move) {
+    let b = RedoMove(move);
     return GetFen(b);
 }
 
@@ -83,7 +83,7 @@ function isEmpty(x) {
 }
 
 function navigate(pos, dir) {
-    let r = pos + dir;
+    let r = +pos + +dir;
     if (r >= SIZE * SIZE) return -1;
     if ((dir > -2) && (dir < 2)) {
         if (((pos / SIZE) | 0) != ((r / SIZE) | 0)) return -1;
@@ -569,7 +569,7 @@ async function FindMove(fen, callback, logger) {
         ix = _.random(0, sz - 1);
     }
 
-    fen = ApplyMove(fen, r[ix].pos);
+    fen = ApplyMove(r[ix].pos);
     callback(r[ix].pos, fen, Math.abs(r[ix].weight) * 1000, t2 - t0);
 }
 
@@ -686,7 +686,7 @@ async function Fit(data, logger) {
 
     model.compile({optimizer: 'sgd', loss: 'categoricalCrossentropy', metrics: ['accuracy']});
     const h = await model.fit(xs, ys, {
-        batchSize: batch,
+        batchSize: 100,
         epochs: 5
     });    
     console.log(h);
