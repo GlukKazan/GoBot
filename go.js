@@ -185,7 +185,7 @@ function analyze(board) {
 }
 
 function isDead(board, a, pos) {
-    let dame = 0;
+    let dame = 0; let ixs = [];
     _.each([1, -1, SIZE, -SIZE], function(dir) {
         let p = navigate(pos, dir);
         if (p < 0) return;
@@ -194,6 +194,8 @@ function isDead(board, a, pos) {
             if (_.isUndefined(ix)) return;
             const d = a.res[ix].dame;
             if (_.isUndefined(d)) return;
+            if (_.indexOf(ixs, ix) >= 0) return;
+            ixs.push(ix);
             dame += d.length - 1;
             return;
         }
