@@ -4,16 +4,22 @@ const tf = require('@tensorflow/tfjs');
 const wasm = require('@tensorflow/tfjs-backend-wasm');
 const {nodeFileSystemRouter} = require('@tensorflow/tfjs-node/dist/io/file_system');
 
+const axios = require('axios');
 const _ = require('underscore');
 
 const URL = 'http://127.0.0.1:3000/model/model.json';
 const SIZE = 19;
 const BATCH = 1;
 
+const BATCH_SIZE = 10;
+const EPOCH_COUNT = 3;
+const VALID_SPLIT = 0.1;
+
 let model = null;
 let board = null;
 let stat  = null;
 let cnt   = 0;
+let dec   = 10;
 
 function RedoMove(move) {
     _.each([1, -1, SIZE, -SIZE], function(dir) {
@@ -664,7 +670,22 @@ async function SaveModel(savePath) {
     await model.save(`file:///tmp/${savePath}`);
 }
 
-async function Fit(data, logger) {
+function sendStat(SERVICE, size, count, split, time, h, m) {
+    axios.post(SERVICE + '/api/ai/stat', {
+        batch_size: size,
+        epoch_count: count,
+        validation_split: split,
+        time_delta: time,
+        result: h,
+        model: m
+    })
+    .then(function (response) {})
+    .catch(function (error) {
+      console.log('STAT ERROR: ' + error);
+    });
+}
+
+async function Fit(data, logger, SERVICE) {
     const batch = data.length;
     board = new Float32Array(batch * SIZE * SIZE);
 
@@ -688,18 +709,28 @@ async function Fit(data, logger) {
 
     model.compile({optimizer: 'sgd', loss: 'categoricalCrossentropy', metrics: ['accuracy']});
     const h = await model.fit(xs, ys, {
-        batchSize: 100,
-        epochs: 5
+        batchSize: BATCH_SIZE,
+        epochs: EPOCH_COUNT,
+        validationSplit: VALID_SPLIT
     });    
-    console.log(h);
+//  console.log(h);
     const t2 = Date.now();
-    console.log('Fit time: ' + (t2 - t1));
+    const delta = t2 - t1;
+    console.log('Fit time: ' + delta);
 
     xs.dispose();
     ys.dispose();
 
-    cnt++;
-    await SaveModel('model_' + cnt + '.json');
+    let m = null;
+    dec--;
+    if (dec == 0) {
+        dec = 10;
+        cnt++;
+        m = 'model_' + cnt + '.json';
+        await SaveModel(m);
+    }
+
+    sendStat(SERVICE, BATCH_SIZE, EPOCH_COUNT, VALID_SPLIT, delta, h, m);
 }
 
 module.exports.FindMove = FindMove;

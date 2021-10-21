@@ -16,7 +16,7 @@ const STATE = {
     LERN: 9
 };
 
-const SERVICE  = 'http://127.0.0.1:3000';
+const SERVICE  = 'https://games.dtco.ru';
 const USERNAME = 'GoBot';
 const PASSWORD = 'GoBot';
 
@@ -122,9 +122,9 @@ let getConfirmed = function(app) {
 }
 
 let learn = function(app) {
-    //  console.log('LERN');
+    //  console.log('LERN');    
     app.state = STATE.WAIT;
-    axios.delete(SERVICE + '/api/ai/fit/2/1000', {
+    axios.delete(SERVICE + '/api/ai/fit/2/100', {
         headers: { Authorization: `Bearer ${TOKEN}` }
     })
     .then(function (response) {
@@ -140,11 +140,11 @@ let learn = function(app) {
                 }
             });
             if (data.length > 0) {
-                ai.Fit(data, logger);
+                ai.Fit(data, logger, SERVICE);
             }
         } 
         app.state = STATE.RQST;
-})
+    })
     .catch(function (error) {
         console.log('RQST ERROR: ' + error);
         logger.error('RQST ERROR: ' + error);
