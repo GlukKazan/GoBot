@@ -16,7 +16,7 @@ const STATE = {
     LERN: 9
 };
 
-const SERVICE  = 'https://games.dtco.ru';
+const SERVICE  = 'http://127.0.0.1:3000';
 const USERNAME = 'GoBot';
 const PASSWORD = 'GoBot';
 
@@ -241,6 +241,10 @@ function getSetup(fen) {
 
 function FinishTurnCallback(bestMove, fen, value, time) {
     let move = ai.FormatMove(bestMove);
+    const result = setup.match(/[?&]turn=(\d+)/);
+    if (result) {
+        turn = result[1];
+    }
     console.log('move = ' + move + ', value=' + value + ', time = ' + time);
     logger.info('move = ' + move + ', value=' + value + ', time = ' + time);
     app.state  = STATE.WAIT;
