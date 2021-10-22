@@ -9,9 +9,8 @@ const _ = require('underscore');
 
 const URL = 'http://127.0.0.1:3000/model/model.json';
 const SIZE = 19;
-const BATCH = 1;
 
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 100;
 const EPOCH_COUNT = 3;
 const VALID_SPLIT = 0.1;
 
@@ -218,8 +217,7 @@ function isSecondLine(board, pos) {
         if (p < 0) return;
         if (!isFriend(board[p])) return;
         const q = navigate(pos, -dir);
-        if (q < 0) return;
-        if (navigate(q, -dir) < 0) r = true;
+        if (q < 0) r = true;
     });
     return r;
 }
