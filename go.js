@@ -20,30 +20,43 @@ let stat  = null;
 let cnt   = 0;
 let dec   = 10;
 
-function RedoMove(move) {
+function RedoMove(move, ko) {
+    let captured = []; let f = true;
     _.each([1, -1, SIZE, -SIZE], function(dir) {
         let p = navigate(move, dir);
         if (p < 0) return;
         let ix = stat.map[p];
         if (_.isUndefined(ix)) return;
-        if (!isEnemy(stat.res[ix].type)) return;
+        if (!isEnemy(stat.res[ix].type)) {
+            f = false;
+            return;
+        }
         if (stat.res[ix].dame.length > 1) return;
         _.each(stat.res[ix].group, function (q) {
             board[q] = 0;
+            captured.push(q);
         });
     });
+    if (captured.length == 1 && f) {
+        ko.push(captured[0]);
+    }
     board[move] = 1;
     return board;
 }
 
-function GetFen(board) {
+function GetFen(board, ko) {
     let r = "";
 
     for (let row = 0; row < SIZE; row++) {
         if (row != 0) r += '/';
         let empty = 0;
         for (let col = 0; col < SIZE; col++) {
-            let piece = board[row * SIZE + col];
+            const pos = row * SIZE + col;
+            if (_.indexOf(ko, pos) >= 0) {
+                r += 'X';
+                continue;
+            }
+            const piece = board[pos];
             if (isEmpty(piece)) {
                 if (empty > 8) {
                     r += empty;
@@ -71,8 +84,9 @@ function GetFen(board) {
 }
 
 function ApplyMove(move) {
-    let b = RedoMove(move);
-    return GetFen(b);
+    let ko = [];
+    let b = RedoMove(move, ko);
+    return GetFen(b, ko);
 }
 
 function isFriend(x) {
@@ -498,6 +512,7 @@ async function FindMove(fen, callback, logger) {
     if (forbidden.length < 10) {
         forbidden.push(180);
     }
+    hints = _.difference(hints, forbidden);
 
     let r = []; 
     if (hints.length == 0) {
