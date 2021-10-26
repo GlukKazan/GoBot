@@ -336,7 +336,7 @@ function checkForbidden(board, forbidden, hints) {
         }
         // Atari threat
         if (isDead(board, a, p)) {
-            forbidden.push(p);
+            if (_.indexOf(hints, p) < 0) forbidden.push(p);
             continue;
         }
         // Second line Atari threat
