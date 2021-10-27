@@ -44,7 +44,7 @@ function RedoMove(move, ko) {
     return board;
 }
 
-function GetFen(board, ko) {
+function GetFen(board, ko, move) {
     let r = "";
 
     for (let row = 0; row < SIZE; row++) {
@@ -69,9 +69,9 @@ function GetFen(board, ko) {
                     r += empty;
                 empty = 0;
                 if (isFriend(piece)) {
-                    r += 'b';
+                    r += (move == pos) ? 'B' : 'b';
                 } else {
-                    r += 'w';
+                    r += (move == pos) ? 'W' : 'w';
                 }
             }
         }
@@ -86,7 +86,7 @@ function GetFen(board, ko) {
 function ApplyMove(move) {
     let ko = [];
     let b = RedoMove(move, ko);
-    return GetFen(b, ko);
+    return GetFen(b, ko, move);
 }
 
 function isFriend(x) {
@@ -438,8 +438,14 @@ function InitializeFromFen(fen, forbidden, redo, inverse, batch) {
 
          let piece = 0;
          switch (c) {
+            case 'W': 
+               piece = inverse ? -1 : 1;
+               break;
             case 'w': 
                piece = inverse ? -1 : 1;
+               break;
+            case 'B': 
+               piece = inverse ? 1 : -1;
                break;
             case 'b': 
                piece = inverse ? 1 : -1;
