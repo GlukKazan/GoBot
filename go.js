@@ -221,7 +221,7 @@ function isDead(board, a, pos) {
         if (isEnemy(board[p])) return;
         dame++;
     });
-    return dame < 2;
+    return dame < 3;
 }
 
 function isSecondLine(board, pos) {
@@ -301,18 +301,18 @@ function checkForbidden(board, forbidden, hints) {
         for (let i = 0; i < a.res.length; i++) {
             if (!isFriend(a.res[i].type)) continue;
             if (a.res[i].dame.length != 1) continue;
-            if (isSecondLine(board, a.res[i].dame[0])) {
+/*          if (isSecondLine(board, a.res[i].dame[0])) {
                 forbidden.push(a.res[i].dame[0]);
                 continue;
-            }
+            }*/
             if (isDead(board, a, a.res[i].dame[0])) continue;
-            if ((m !== null) && (m > a.res[i].group.length)) continue;
+//          if ((m !== null) && (m > a.res[i].group.length)) continue;
             m = a.res[i].group.length;
-            hints.length = 0;
+//          hints.length = 0;
             hints.push(a.res[i].dame[0]);
         }
         // Second line Atari
-        for (let i = 0; i < a.res.length; i++) {
+/*      for (let i = 0; i < a.res.length; i++) {
             if (!isEnemy(a.res[i].type)) continue;
             if (a.res[i].dame.length != 2) continue;
             let p = null;
@@ -323,7 +323,7 @@ function checkForbidden(board, forbidden, hints) {
             _.each(_.without(a.res[i].dame, p), function(q) {
                 hints.push(q);
             });
-        }
+        }*/
     }
     for (let p = 0; p < SIZE * SIZE; p++) {
         const ix = a.map[p];
@@ -331,7 +331,7 @@ function checkForbidden(board, forbidden, hints) {
         if (!isEmpty(a.res[ix].type)) continue;
         // Eyes filling
         if (a.res[ix].isEye && (a.res[ix].group.length < 5)) {
-            forbidden.push(p);
+            if (_.indexOf(hints, p) < 0) forbidden.push(p);
             continue;
         }
         // Atari threat
