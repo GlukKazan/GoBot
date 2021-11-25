@@ -503,7 +503,7 @@ async function InitModel() {
     }
 }
 
-async function FindMove(fen, callback, logger) {
+async function FindMove(fen, callback, failback, logger) {
     board = new Float32Array(16 * SIZE * SIZE);
 
     const t0 = Date.now();
@@ -582,7 +582,11 @@ async function FindMove(fen, callback, logger) {
     console.log('Predict time: ' + (t2 - t1));
 
     let sz = r.length; let ix = 0;
-    if (sz < 1) return; sz = 1;
+    if (sz < 1) {
+        failback(t2 - t0);
+        return; 
+    }
+    sz = 1;
     while (sz < Math.min(r.length - 1, 5)) {
         if (Math.abs(r[sz].weight) * 2 < Math.abs(r[sz - 1].weight)) break;
         sz++;
@@ -595,7 +599,7 @@ async function FindMove(fen, callback, logger) {
         if (sz > 5) sz = 5;
         ix = _.random(0, sz - 1);
     }
-
+    
     fen = ApplyMove(r[ix].pos);
     callback(r[ix].pos, fen, Math.abs(r[ix].weight) * 1000, t2 - t0);
 }

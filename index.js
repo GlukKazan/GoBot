@@ -239,6 +239,24 @@ function getSetup(fen) {
     return r;
 }
 
+function FailTurnCallback(time) {
+    console.log('uid = ' + uid + ', time = ' + time);
+    logger.info('uid = ' + uid + ', time = ' + time);
+    axios.post(SERVICE + '/api/session/close', {
+        loser: uid
+    }, {
+        headers: { Authorization: `Bearer ${TOKEN}` }
+    })
+    .then(function (response) {
+        app.state  = STATE.TURN;
+    })
+    .catch(function (error) {
+        console.log('MOVE ERROR: ' + error);
+        logger.error('MOVE ERROR: ' + error);
+        app.state  = STATE.INIT;
+    });
+}
+
 function FinishTurnCallback(bestMove, fen, value, time) {
     let move = ai.FormatMove(bestMove);
     const result = setup.match(/[?&]turn=(\d+)/);
@@ -279,7 +297,7 @@ let sendMove = function(app) {
         let fen = result[1];
         console.log('[' + sid + '] fen = ' + fen);
         logger.info('[' + sid + '] fen = ' + fen);
-        ai.FindMove(fen, FinishTurnCallback, LoggerInfo);
+        ai.FindMove(fen, FinishTurnCallback, FailTurnCallback, LoggerInfo);
     } else {
         app.state  = STATE.STOP;
     }
